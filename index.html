@@ -291,7 +291,7 @@
                     }
                     
                     // Play bounce sound with pitch based on ball size
-                    // Larger balls produce higher pitch sounds
+                    // Larger balls produce higher frequency (higher pitch) sounds
                     const frequency = SOUND_BASE_FREQUENCY + ball.radius * SOUND_FREQUENCY_MULTIPLIER;
                     playBounceSound(Math.max(SOUND_MIN_FREQUENCY, Math.min(SOUND_MAX_FREQUENCY, frequency)));
                 }
