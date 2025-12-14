@@ -73,32 +73,49 @@
         canvas.width = 800;
         canvas.height = 600;
 
-        // Audio context for sound generation
-        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        // Audio context for sound generation (created lazily on first interaction)
+        let audioContext = null;
+        
+        /**
+         * Initialize audio context on first use (handles autoplay policies)
+         */
+        function getAudioContext() {
+            if (!audioContext) {
+                try {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                } catch (e) {
+                    console.warn('Web Audio API not supported:', e);
+                }
+            }
+            return audioContext;
+        }
 
         /**
          * Play a short bounce sound using Web Audio API
          * Creates a synthesized "boop" sound with frequency based on ball size
          */
         function playBounceSound(frequency = 440) {
-            const oscillator = audioContext.createOscillator();
-            const gainNode = audioContext.createGain();
+            const ctx = getAudioContext();
+            if (!ctx) return; // Skip if audio not available
+            
+            const oscillator = ctx.createOscillator();
+            const gainNode = ctx.createGain();
             
             // Configure oscillator
             oscillator.connect(gainNode);
-            gainNode.connect(audioContext.destination);
+            gainNode.connect(ctx.destination);
             
             // Set sound properties
             oscillator.frequency.value = frequency;
             oscillator.type = 'sine';
             
             // Set volume envelope (quick fade out)
-            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+            gainNode.gain.setValueAtTime(0.3, ctx.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
             
             // Play sound
-            oscillator.start(audioContext.currentTime);
-            oscillator.stop(audioContext.currentTime + 0.1);
+            oscillator.start(ctx.currentTime);
+            oscillator.stop(ctx.currentTime + 0.1);
         }
 
         /**
@@ -193,9 +210,10 @@
             let x, y, vx, vy, radius, color;
 
             if (parentBall) {
-                // Spawn near the parent ball
-                x = parentBall.x + (Math.random() - 0.5) * 20;
-                y = parentBall.y + (Math.random() - 0.5) * 20;
+                // Spawn near the parent ball with small offset
+                const offset = 15;
+                x = parentBall.x + (Math.random() - 0.5) * offset;
+                y = parentBall.y + (Math.random() - 0.5) * offset;
                 
                 // Slightly different velocity (±20% variation)
                 const velocityVariation = 0.2;
@@ -205,6 +223,11 @@
                 // Start with smaller radius
                 radius = 10;
                 color = getRandomColor();
+                
+                // Ensure ball stays within bounds with proper margin
+                const margin = radius + 5;
+                x = Math.max(margin, Math.min(canvas.width - margin, x));
+                y = Math.max(margin, Math.min(canvas.height - margin, y));
             } else {
                 // Initial ball with random position and velocity
                 x = canvas.width / 2;
@@ -214,10 +237,6 @@
                 radius = 15;
                 color = getRandomColor();
             }
-
-            // Ensure ball stays within bounds
-            x = Math.max(radius, Math.min(canvas.width - radius, x));
-            y = Math.max(radius, Math.min(canvas.height - radius, y));
 
             return new Ball(x, y, vx, vy, radius, color);
         }
@@ -265,7 +284,8 @@
                     }
                     
                     // Play bounce sound with pitch based on ball size
-                    const frequency = 200 + (50 - ball.radius) * 10;
+                    // Larger balls produce lower pitch sounds
+                    const frequency = 300 + ball.radius * 3;
                     playBounceSound(Math.max(100, Math.min(1000, frequency)));
                 }
 
