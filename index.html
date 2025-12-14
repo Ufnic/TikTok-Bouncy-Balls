@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bouncing Balls Simulation</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #1a1a1a;
+            font-family: Arial, sans-serif;
+            color: #ffffff;
+        }
+        
+        #canvas {
+            border: 2px solid #ffffff;
+            background-color: #2a2a2a;
+            box-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
+        }
+        
+        .info {
+            margin-top: 20px;
+            text-align: center;
+        }
+        
+        .controls {
+            margin: 20px 0;
+        }
+        
+        button {
+            padding: 10px 20px;
+            margin: 0 10px;
+            font-size: 16px;
+            cursor: pointer;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            transition: background-color 0.3s;
+        }
+        
+        button:hover {
+            background-color: #45a049;
+        }
+        
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎾 Bouncing Balls Simulation</h1>
+    <div class="controls">
+        <button id="startBtn">Start</button>
+        <button id="resetBtn">Reset</button>
+    </div>
+    <canvas id="canvas"></canvas>
+    <div class="info">
+        <p>Ball count: <span id="ballCount">1</span></p>
+        <p>Click "Start" to begin the simulation!</p>
+        <p>Balls grow 10% and spawn new balls when hitting edges</p>
+    </div>
+
+    <script>
+        // Canvas setup
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = 800;
+        canvas.height = 600;
+
+        // Audio context for sound generation
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+        /**
+         * Play a short bounce sound using Web Audio API
+         * Creates a synthesized "boop" sound with frequency based on ball size
+         */
+        function playBounceSound(frequency = 440) {
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            // Configure oscillator
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            // Set sound properties
+            oscillator.frequency.value = frequency;
+            oscillator.type = 'sine';
+            
+            // Set volume envelope (quick fade out)
+            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+            
+            // Play sound
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + 0.1);
+        }
+
+        /**
+         * Ball class representing a bouncing ball
+         */
+        class Ball {
+            constructor(x, y, vx, vy, radius, color) {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.radius = radius;
+                this.color = color;
+            }
+
+            /**
+             * Update ball position and handle edge collisions
+             * Returns true if a collision occurred
+             */
+            update() {
+                let collision = false;
+
+                // Update position
+                this.x += this.vx;
+                this.y += this.vy;
+
+                // Check left/right edge collision
+                if (this.x - this.radius <= 0) {
+                    this.x = this.radius;
+                    this.vx = Math.abs(this.vx); // Reverse to positive
+                    collision = true;
+                } else if (this.x + this.radius >= canvas.width) {
+                    this.x = canvas.width - this.radius;
+                    this.vx = -Math.abs(this.vx); // Reverse to negative
+                    collision = true;
+                }
+
+                // Check top/bottom edge collision
+                if (this.y - this.radius <= 0) {
+                    this.y = this.radius;
+                    this.vy = Math.abs(this.vy); // Reverse to positive
+                    collision = true;
+                } else if (this.y + this.radius >= canvas.height) {
+                    this.y = canvas.height - this.radius;
+                    this.vy = -Math.abs(this.vy); // Reverse to negative
+                    collision = true;
+                }
+
+                return collision;
+            }
+
+            /**
+             * Grow the ball's radius by 10%
+             */
+            grow() {
+                this.radius *= 1.1;
+            }
+
+            /**
+             * Draw the ball on the canvas
+             */
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                ctx.closePath();
+            }
+        }
+
+        // Simulation state
+        let balls = [];
+        let animationId = null;
+        let isRunning = false;
+
+        /**
+         * Generate a random color for balls
+         */
+        function getRandomColor() {
+            const hue = Math.random() * 360;
+            return `hsl(${hue}, 70%, 60%)`;
+        }
+
+        /**
+         * Create a new ball with slightly varied velocity
+         * Based on parent ball if provided, otherwise random
+         */
+        function createBall(parentBall = null) {
+            let x, y, vx, vy, radius, color;
+
+            if (parentBall) {
+                // Spawn near the parent ball
+                x = parentBall.x + (Math.random() - 0.5) * 20;
+                y = parentBall.y + (Math.random() - 0.5) * 20;
+                
+                // Slightly different velocity (±20% variation)
+                const velocityVariation = 0.2;
+                vx = parentBall.vx * (1 + (Math.random() - 0.5) * velocityVariation);
+                vy = parentBall.vy * (1 + (Math.random() - 0.5) * velocityVariation);
+                
+                // Start with smaller radius
+                radius = 10;
+                color = getRandomColor();
+            } else {
+                // Initial ball with random position and velocity
+                x = canvas.width / 2;
+                y = canvas.height / 2;
+                vx = (Math.random() - 0.5) * 8;
+                vy = (Math.random() - 0.5) * 8;
+                radius = 15;
+                color = getRandomColor();
+            }
+
+            // Ensure ball stays within bounds
+            x = Math.max(radius, Math.min(canvas.width - radius, x));
+            y = Math.max(radius, Math.min(canvas.height - radius, y));
+
+            return new Ball(x, y, vx, vy, radius, color);
+        }
+
+        /**
+         * Initialize simulation with one ball
+         */
+        function initSimulation() {
+            balls = [createBall()];
+            updateBallCount();
+        }
+
+        /**
+         * Update ball count display
+         */
+        function updateBallCount() {
+            document.getElementById('ballCount').textContent = balls.length;
+        }
+
+        /**
+         * Main animation loop
+         */
+        function animate() {
+            // Clear canvas
+            ctx.fillStyle = '#2a2a2a';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Update and draw all balls
+            const newBalls = [];
+            for (let i = 0; i < balls.length; i++) {
+                const ball = balls[i];
+                
+                // Update ball position and check for collisions
+                const hadCollision = ball.update();
+
+                // Handle collision effects
+                if (hadCollision) {
+                    // Grow the ball by 10%
+                    ball.grow();
+                    
+                    // Spawn a new ball with slightly different velocity
+                    // Limit total balls to prevent performance issues
+                    if (balls.length + newBalls.length < 100) {
+                        newBalls.push(createBall(ball));
+                    }
+                    
+                    // Play bounce sound with pitch based on ball size
+                    const frequency = 200 + (50 - ball.radius) * 10;
+                    playBounceSound(Math.max(100, Math.min(1000, frequency)));
+                }
+
+                // Draw the ball
+                ball.draw();
+            }
+
+            // Add newly spawned balls
+            if (newBalls.length > 0) {
+                balls.push(...newBalls);
+                updateBallCount();
+            }
+
+            // Continue animation loop
+            if (isRunning) {
+                animationId = requestAnimationFrame(animate);
+            }
+        }
+
+        /**
+         * Start the simulation
+         */
+        function start() {
+            if (!isRunning) {
+                isRunning = true;
+                document.getElementById('startBtn').disabled = true;
+                animate();
+            }
+        }
+
+        /**
+         * Reset the simulation
+         */
+        function reset() {
+            isRunning = false;
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+                animationId = null;
+            }
+            
+            // Clear canvas
+            ctx.fillStyle = '#2a2a2a';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Reinitialize
+            initSimulation();
+            
+            // Draw initial ball
+            balls[0].draw();
+            
+            document.getElementById('startBtn').disabled = false;
+        }
+
+        // Event listeners
+        document.getElementById('startBtn').addEventListener('click', start);
+        document.getElementById('resetBtn').addEventListener('click', reset);
+
+        // Initialize the simulation
+        initSimulation();
+        balls[0].draw();
+    </script>
+</body>
+</html>
