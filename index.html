@@ -81,9 +81,9 @@
         const BALL_RADIUS = 15;
         
         // Exit configuration (gap in the circle)
-        const EXIT_ANGLE_START = Math.PI / 2; // 90 degrees (top)
-        const EXIT_ANGLE_END = Math.PI / 2 + Math.PI / 12; // 90 + 15 = 105 degrees
-        const EXIT_WIDTH = EXIT_ANGLE_END - EXIT_ANGLE_START;
+        // In canvas coordinates: 0=right, π/2=bottom, π=left, 3π/2=top
+        const EXIT_ANGLE_START = Math.PI / 2; // 90 degrees (bottom-right area)
+        const EXIT_ANGLE_END = Math.PI / 2 + Math.PI / 12; // 105 degrees
 
         /**
          * Ball class representing a bouncing ball with gravity
@@ -176,8 +176,8 @@
          */
         function drawBoundary() {
             ctx.beginPath();
-            // Draw circle with a gap for the exit
-            ctx.arc(CENTER_X, CENTER_Y, CIRCLE_RADIUS, EXIT_ANGLE_END, EXIT_ANGLE_START + 2 * Math.PI);
+            // Draw circle with a gap for the exit (from end of gap to start of gap, wrapping around)
+            ctx.arc(CENTER_X, CENTER_Y, CIRCLE_RADIUS, EXIT_ANGLE_END, EXIT_ANGLE_START + 2 * Math.PI, false);
             ctx.strokeStyle = '#ffffff';
             ctx.lineWidth = 4;
             ctx.stroke();
