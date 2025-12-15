@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bouncing Balls Simulation</title>
+    <title>Circular Bouncing Ball Simulation</title>
     <style>
         body {
             margin: 0;
@@ -17,7 +17,6 @@
         }
         
         #canvas {
-            border: 2px solid #ffffff;
             background-color: #2a2a2a;
             box-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
         }
@@ -54,16 +53,16 @@
     </style>
 </head>
 <body>
-    <h1>🎾 Bouncing Balls Simulation</h1>
+    <h1>🎾 Circular Bouncing Ball Simulation</h1>
     <div class="controls">
         <button id="startBtn">Start</button>
         <button id="resetBtn">Reset</button>
     </div>
     <canvas id="canvas"></canvas>
     <div class="info">
-        <p>Ball count: <span id="ballCount">1</span></p>
+        <p>Status: <span id="status">Ready</span></p>
         <p>Click "Start" to begin the simulation!</p>
-        <p>Balls grow 10% and spawn new balls when hitting edges</p>
+        <p>Ball bounces inside a circle with gravity and leaves trails. Watch for the exit!</p>
     </div>
 
     <script>
@@ -71,62 +70,23 @@
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
         canvas.width = 800;
-        canvas.height = 600;
+        canvas.height = 800;
 
         // Configuration constants
-        const MAX_BALLS = 100;
-        const SOUND_BASE_FREQUENCY = 300;
-        const SOUND_FREQUENCY_MULTIPLIER = 3;
-        const SOUND_MIN_FREQUENCY = 100;
-        const SOUND_MAX_FREQUENCY = 1000;
-
-        // Audio context for sound generation (created lazily on first interaction)
-        let audioContext = null;
+        const CENTER_X = canvas.width / 2;
+        const CENTER_Y = canvas.height / 2;
+        const CIRCLE_RADIUS = 350; // Radius of circular boundary
+        const GRAVITY = 0.5; // Gravity acceleration
+        const DAMPING = 0.98; // Energy loss on bounce (slight damping)
+        const BALL_RADIUS = 15;
         
-        /**
-         * Initialize audio context on first use (handles autoplay policies)
-         */
-        function getAudioContext() {
-            if (!audioContext) {
-                try {
-                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                } catch (e) {
-                    console.warn('Web Audio API not supported:', e);
-                }
-            }
-            return audioContext;
-        }
+        // Exit configuration (gap in the circle)
+        const EXIT_ANGLE_START = Math.PI / 2; // 90 degrees (top)
+        const EXIT_ANGLE_END = Math.PI / 2 + Math.PI / 12; // 90 + 15 = 105 degrees
+        const EXIT_WIDTH = EXIT_ANGLE_END - EXIT_ANGLE_START;
 
         /**
-         * Play a short bounce sound using Web Audio API
-         * Creates a synthesized "boop" sound with frequency based on ball size
-         */
-        function playBounceSound(frequency = 440) {
-            const ctx = getAudioContext();
-            if (!ctx) return; // Skip if audio not available
-            
-            const oscillator = ctx.createOscillator();
-            const gainNode = ctx.createGain();
-            
-            // Configure oscillator
-            oscillator.connect(gainNode);
-            gainNode.connect(ctx.destination);
-            
-            // Set sound properties
-            oscillator.frequency.value = frequency;
-            oscillator.type = 'sine';
-            
-            // Set volume envelope (quick fade out)
-            gainNode.gain.setValueAtTime(0.3, ctx.currentTime);
-            gainNode.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.1);
-            
-            // Play sound
-            oscillator.start(ctx.currentTime);
-            oscillator.stop(ctx.currentTime + 0.1);
-        }
-
-        /**
-         * Ball class representing a bouncing ball
+         * Ball class representing a bouncing ball with gravity
          */
         class Ball {
             constructor(x, y, vx, vy, radius, color) {
@@ -139,46 +99,55 @@
             }
 
             /**
-             * Update ball position and handle edge collisions
-             * Returns true if a collision occurred
+             * Update ball position with gravity and handle circular boundary collisions
+             * Returns 'collision' if ball bounced, 'exit' if ball went through exit, or null
              */
             update() {
-                let collision = false;
+                // Apply gravity
+                this.vy += GRAVITY;
 
                 // Update position
                 this.x += this.vx;
                 this.y += this.vy;
 
-                // Check left/right edge collision
-                if (this.x - this.radius <= 0) {
-                    this.x = this.radius;
-                    this.vx = Math.abs(this.vx); // Reverse to positive
-                    collision = true;
-                } else if (this.x + this.radius >= canvas.width) {
-                    this.x = canvas.width - this.radius;
-                    this.vx = -Math.abs(this.vx); // Reverse to negative
-                    collision = true;
+                // Calculate distance from center
+                const dx = this.x - CENTER_X;
+                const dy = this.y - CENTER_Y;
+                const distanceFromCenter = Math.sqrt(dx * dx + dy * dy);
+
+                // Check if ball is hitting the circular boundary
+                if (distanceFromCenter + this.radius >= CIRCLE_RADIUS) {
+                    // Calculate angle of ball position
+                    const angle = Math.atan2(dy, dx);
+                    
+                    // Normalize angle to 0-2π range
+                    const normalizedAngle = angle < 0 ? angle + 2 * Math.PI : angle;
+                    
+                    // Check if ball is at the exit gap
+                    if (normalizedAngle >= EXIT_ANGLE_START && normalizedAngle <= EXIT_ANGLE_END) {
+                        // Ball went through the exit
+                        return 'exit';
+                    }
+                    
+                    // Ball hits the boundary - reflect it
+                    // Position ball exactly on the boundary
+                    const distance = CIRCLE_RADIUS - this.radius;
+                    this.x = CENTER_X + (dx / distanceFromCenter) * distance;
+                    this.y = CENTER_Y + (dy / distanceFromCenter) * distance;
+                    
+                    // Calculate normal vector (pointing inward)
+                    const normalX = -dx / distanceFromCenter;
+                    const normalY = -dy / distanceFromCenter;
+                    
+                    // Reflect velocity vector
+                    const dotProduct = this.vx * normalX + this.vy * normalY;
+                    this.vx = (this.vx - 2 * dotProduct * normalX) * DAMPING;
+                    this.vy = (this.vy - 2 * dotProduct * normalY) * DAMPING;
+                    
+                    return 'collision';
                 }
 
-                // Check top/bottom edge collision
-                if (this.y - this.radius <= 0) {
-                    this.y = this.radius;
-                    this.vy = Math.abs(this.vy); // Reverse to positive
-                    collision = true;
-                } else if (this.y + this.radius >= canvas.height) {
-                    this.y = canvas.height - this.radius;
-                    this.vy = -Math.abs(this.vy); // Reverse to negative
-                    collision = true;
-                }
-
-                return collision;
-            }
-
-            /**
-             * Grow the ball's radius by 10%
-             */
-            grow() {
-                this.radius *= 1.1;
+                return null;
             }
 
             /**
@@ -197,70 +166,87 @@
         }
 
         // Simulation state
-        let balls = [];
+        let ball = null;
         let animationId = null;
         let isRunning = false;
+        let trails = []; // Store trail positions
 
         /**
-         * Generate a random color for balls
+         * Draw the circular boundary with exit gap
          */
-        function getRandomColor() {
-            const hue = Math.random() * 360;
-            return `hsl(${hue}, 70%, 60%)`;
+        function drawBoundary() {
+            ctx.beginPath();
+            // Draw circle with a gap for the exit
+            ctx.arc(CENTER_X, CENTER_Y, CIRCLE_RADIUS, EXIT_ANGLE_END, EXIT_ANGLE_START + 2 * Math.PI);
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 4;
+            ctx.stroke();
+            ctx.closePath();
+            
+            // Draw exit markers (small lines at gap edges)
+            const exitStartX = CENTER_X + Math.cos(EXIT_ANGLE_START) * CIRCLE_RADIUS;
+            const exitStartY = CENTER_Y + Math.sin(EXIT_ANGLE_START) * CIRCLE_RADIUS;
+            const exitEndX = CENTER_X + Math.cos(EXIT_ANGLE_END) * CIRCLE_RADIUS;
+            const exitEndY = CENTER_Y + Math.sin(EXIT_ANGLE_END) * CIRCLE_RADIUS;
+            
+            ctx.strokeStyle = '#ff0000';
+            ctx.lineWidth = 6;
+            ctx.beginPath();
+            ctx.moveTo(exitStartX - 10 * Math.cos(EXIT_ANGLE_START), exitStartY - 10 * Math.sin(EXIT_ANGLE_START));
+            ctx.lineTo(exitStartX + 10 * Math.cos(EXIT_ANGLE_START), exitStartY + 10 * Math.sin(EXIT_ANGLE_START));
+            ctx.stroke();
+            
+            ctx.beginPath();
+            ctx.moveTo(exitEndX - 10 * Math.cos(EXIT_ANGLE_END), exitEndY - 10 * Math.sin(EXIT_ANGLE_END));
+            ctx.lineTo(exitEndX + 10 * Math.cos(EXIT_ANGLE_END), exitEndY + 10 * Math.sin(EXIT_ANGLE_END));
+            ctx.stroke();
         }
 
         /**
-         * Create a new ball with slightly varied velocity
-         * Based on parent ball if provided, otherwise random
+         * Draw trails left by bounces
          */
-        function createBall(parentBall = null) {
-            let x, y, vx, vy, radius, color;
+        function drawTrails() {
+            trails.forEach((trail, index) => {
+                const alpha = Math.max(0, 1 - (Date.now() - trail.time) / 2000); // Fade over 2 seconds
+                ctx.beginPath();
+                ctx.arc(trail.x, trail.y, 5, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(255, 200, 100, ${alpha})`;
+                ctx.fill();
+                ctx.closePath();
+            });
+            
+            // Remove old trails
+            trails = trails.filter(trail => Date.now() - trail.time < 2000);
+        }
 
-            if (parentBall) {
-                // Spawn near the parent ball with small offset
-                const offset = 15;
-                x = parentBall.x + (Math.random() - 0.5) * offset;
-                y = parentBall.y + (Math.random() - 0.5) * offset;
-                
-                // Slightly different velocity (±20% variation)
-                const velocityVariation = 0.2;
-                vx = parentBall.vx * (1 + (Math.random() - 0.5) * velocityVariation);
-                vy = parentBall.vy * (1 + (Math.random() - 0.5) * velocityVariation);
-                
-                // Start with smaller radius
-                radius = 10;
-                color = getRandomColor();
-                
-                // Ensure ball stays within bounds with proper margin
-                const margin = radius + 5;
-                x = Math.max(margin, Math.min(canvas.width - margin, x));
-                y = Math.max(margin, Math.min(canvas.height - margin, y));
-            } else {
-                // Initial ball with random position and velocity
-                x = canvas.width / 2;
-                y = canvas.height / 2;
-                vx = (Math.random() - 0.5) * 8;
-                vy = (Math.random() - 0.5) * 8;
-                radius = 15;
-                color = getRandomColor();
-            }
-
-            return new Ball(x, y, vx, vy, radius, color);
+        /**
+         * Create initial ball
+         */
+        function createBall() {
+            // Start ball near center with small initial velocity
+            const x = CENTER_X + (Math.random() - 0.5) * 100;
+            const y = CENTER_Y - 100;
+            const vx = (Math.random() - 0.5) * 4;
+            const vy = 0;
+            const color = '#4CAF50';
+            
+            return new Ball(x, y, vx, vy, BALL_RADIUS, color);
         }
 
         /**
          * Initialize simulation with one ball
          */
         function initSimulation() {
-            balls = [createBall()];
-            updateBallCount();
+            ball = createBall();
+            trails = [];
+            updateStatus('Ready');
         }
 
         /**
-         * Update ball count display
+         * Update status display
          */
-        function updateBallCount() {
-            document.getElementById('ballCount').textContent = balls.length;
+        function updateStatus(status) {
+            document.getElementById('status').textContent = status;
         }
 
         /**
@@ -271,39 +257,33 @@
             ctx.fillStyle = '#2a2a2a';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-            // Update and draw all balls
-            const newBalls = [];
-            for (let i = 0; i < balls.length; i++) {
-                const ball = balls[i];
-                
-                // Update ball position and check for collisions
-                const hadCollision = ball.update();
+            // Draw boundary
+            drawBoundary();
+            
+            // Draw trails
+            drawTrails();
 
-                // Handle collision effects
-                if (hadCollision) {
-                    // Grow the ball by 10%
-                    ball.grow();
-                    
-                    // Spawn a new ball with slightly different velocity
-                    // Limit total balls to prevent performance issues
-                    if (balls.length + newBalls.length < MAX_BALLS) {
-                        newBalls.push(createBall(ball));
-                    }
-                    
-                    // Play bounce sound with pitch based on ball size
-                    // Larger balls produce higher frequency (higher pitch) sounds
-                    const frequency = SOUND_BASE_FREQUENCY + ball.radius * SOUND_FREQUENCY_MULTIPLIER;
-                    playBounceSound(Math.max(SOUND_MIN_FREQUENCY, Math.min(SOUND_MAX_FREQUENCY, frequency)));
+            // Update and draw ball if it exists
+            if (ball) {
+                const result = ball.update();
+
+                if (result === 'collision') {
+                    // Add trail at collision point
+                    trails.push({
+                        x: ball.x,
+                        y: ball.y,
+                        time: Date.now()
+                    });
+                } else if (result === 'exit') {
+                    // Ball went through exit - remove it
+                    ball = null;
+                    updateStatus('Ball escaped through exit!');
                 }
 
-                // Draw the ball
-                ball.draw();
-            }
-
-            // Add newly spawned balls
-            if (newBalls.length > 0) {
-                balls.push(...newBalls);
-                updateBallCount();
+                // Draw the ball if it still exists
+                if (ball) {
+                    ball.draw();
+                }
             }
 
             // Continue animation loop
@@ -319,6 +299,7 @@
             if (!isRunning) {
                 isRunning = true;
                 document.getElementById('startBtn').disabled = true;
+                updateStatus('Running');
                 animate();
             }
         }
@@ -340,8 +321,11 @@
             // Reinitialize
             initSimulation();
             
-            // Draw initial ball
-            balls[0].draw();
+            // Draw boundary and initial ball
+            drawBoundary();
+            if (ball) {
+                ball.draw();
+            }
             
             document.getElementById('startBtn').disabled = false;
         }
@@ -352,7 +336,10 @@
 
         // Initialize the simulation
         initSimulation();
-        balls[0].draw();
+        drawBoundary();
+        if (ball) {
+            ball.draw();
+        }
     </script>
 </body>
 </html>
